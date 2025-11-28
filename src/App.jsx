@@ -52,6 +52,8 @@ function QuestionManager({ bank, onBack, onUpdateBank, theme, onToggleTheme }) {
   const [selectedCategory, setSelectedCategory] = useState('全部');
   const [searchTerm, setSearchTerm] = useState('');
   const [showAnswers, setShowAnswers] = useState({});
+  const [storagePath, setStoragePath] = useState('');
+  const fileInputRef = useRef(null);
 
   // 抽题模式状态
   const [isTesting, setIsTesting] = useState(false);
@@ -62,6 +64,16 @@ function QuestionManager({ bank, onBack, onUpdateBank, theme, onToggleTheme }) {
   useEffect(() => {
     onUpdateBank({ ...bank, questions });
   }, [questions]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const env = window.appEnv;
+    if (env && env.isElectron && env.userDataPath) {
+      setStoragePath(env.userDataPath);
+    } else {
+      setStoragePath('浏览器 LocalStorage（仅当前浏览器生效）');
+    }
+  }, []);
 
   const QUESTION_TYPES = ['单选题', '多选题', '填空题', '判断题'];
   const categories = ['全部', ...new Set([...QUESTION_TYPES, ...questions.map(q => q.category).filter(Boolean)])];
@@ -100,6 +112,185 @@ function QuestionManager({ bank, onBack, onUpdateBank, theme, onToggleTheme }) {
     // 重新生成 Key (A, B, C...)
     const rekeyedOptions = updatedOptions.map((opt, i) => ({ ...opt, key: String.fromCharCode(65 + i) }));
     setNewQuestion({ ...newQuestion, options: rekeyedOptions });
+  };
+
+  const escapeCsvCell = (value) => {
+    if (value == null) return '';
+    const s = String(value).replace(/"/g, '""');
+    return /[",\r\n]/.test(s) ? `"${s}"` : s;
+  };
+
+  const buildCsvContent = (qs) => {
+    const headers = ['题型', '题目', '题目答案', '选项A', '选项B', '选项C', '选项D', '选项E', '选项F'];
+    const rows = qs.map((q) => {
+      const category = q.category || '单选题';
+      const questionText = q.question || '';
+      const options = Array.isArray(q.options) ? q.options : [];
+      const correctFromOptions = options.filter((o) => o.isCorrect).map((o) => o.key);
+      const answerText = (correctFromOptions.length ? correctFromOptions.join(';') : (q.answer || ''));
+      const optionTexts = [];
+      for (let i = 0; i < 6; i += 1) {
+        const key = String.fromCharCode(65 + i);
+        const found = options.find((o) => o.key === key);
+        optionTexts.push(found ? (found.text || '') : '');
+      }
+      return [category, questionText, answerText, ...optionTexts];
+    });
+    const lines = [headers, ...rows].map((row) => row.map(escapeCsvCell).join(','));
+    return lines.join('\r\n');
+  };
+
+  const splitCsvLine = (line) => {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i += 1) {
+      const ch = line[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          if (line[i + 1] === '"') {
+            current += '"';
+            i += 1;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          current += ch;
+        }
+      } else if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        result.push(current);
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    result.push(current);
+    return result;
+  };
+
+  const parseCsvToQuestions = (text) => {
+    if (!text) return [];
+    const lines = text.split(/\r?\n/).filter((line) => line.trim());
+    if (lines.length <= 1) return [];
+    const [headerLine, ...dataLines] = lines;
+    const headers = splitCsvLine(headerLine);
+    const idxType = headers.indexOf('题型');
+    const idxQuestion = headers.indexOf('题目');
+    const idxAnswer = headers.indexOf('题目答案');
+    const optionLabels = ['选项A', '选项B', '选项C', '选项D', '选项E', '选项F'];
+    const optionIdx = optionLabels.map((label) => headers.indexOf(label));
+
+    if (idxQuestion === -1) {
+      throw new Error('CSV 中缺少“题目”列表头');
+    }
+
+    const parsed = dataLines.map((line) => {
+      const cells = splitCsvLine(line);
+      const rawCategory = idxType >= 0 ? (cells[idxType] || '').trim() : '单选题';
+      let category = rawCategory || '单选题';
+      if (!['单选题', '多选题', '填空题', '判断题'].includes(category)) {
+        category = '单选题';
+      }
+      const questionText = (cells[idxQuestion] || '').trim();
+      const rawAnswer = idxAnswer >= 0 ? (cells[idxAnswer] || '').trim() : '';
+      const options = [];
+
+      optionIdx.forEach((colIdx, i) => {
+        if (colIdx >= 0) {
+          const textCell = (cells[colIdx] || '').trim();
+          if (textCell) {
+            const key = String.fromCharCode(65 + i);
+            options.push({ key, text: textCell, isCorrect: false });
+          }
+        }
+      });
+
+      let answer = rawAnswer;
+      if (category === '单选题' || category === '多选题') {
+        const keys = rawAnswer
+          .split(/[;,、，；\s]+/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        if (keys.length && options.length) {
+          options.forEach((o) => {
+            o.isCorrect = keys.includes(o.key);
+          });
+          answer = keys.join('、');
+        }
+      }
+
+      if (!questionText) {
+        return null;
+      }
+
+      const isChoice = isChoiceQuestion(category);
+
+      return {
+        question: questionText,
+        answer: answer || (isJudgeQuestion(category) ? '正确' : ''),
+        category,
+        options: isChoice ? (options.length ? options : getDefaultOptions()) : options,
+      };
+    });
+
+    return parsed.filter(Boolean);
+  };
+
+  const handleExportCsv = () => {
+    if (!questions || questions.length === 0) {
+      alert('当前题库没有题目，无法导出 CSV');
+      return;
+    }
+    if (typeof window === 'undefined') return;
+    const csv = buildCsvContent(questions);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const datePart = new Date().toISOString().slice(0, 10);
+    link.download = `${bank.title || '题库'}_${datePart}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportCsvClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleImportCsv = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const text = String(evt.target.result || '');
+        const imported = parseCsvToQuestions(text);
+        if (!imported.length) {
+          alert('CSV 中没有有效的题目数据');
+          return;
+        }
+        const withIds = imported.map((q) => ({
+          ...q,
+          id: `${Date.now().toString()}_${Math.random().toString(36).slice(2, 8)}`,
+        }));
+        setQuestions((prev) => [...withIds, ...prev]);
+        alert(`成功导入 ${withIds.length} 道题目`);
+      } catch (err) {
+        console.error(err);
+        alert('导入失败：请检查 CSV 格式是否正确');
+      } finally {
+        // 允许再次选择同一个文件
+        e.target.value = '';
+      }
+    };
+    reader.readAsText(file, 'utf-8');
   };
 
   // 处理提交（新增或更新）
@@ -316,6 +507,36 @@ function QuestionManager({ bank, onBack, onUpdateBank, theme, onToggleTheme }) {
           </div>
         </div>
       </header>
+
+      <div className="mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-2 text-xs text-gray-500 dark:text-slate-400">
+        <div className="truncate">
+          <span className="font-medium">数据存储位置：</span>
+          <span className="font-mono break-all">{storagePath || '获取中...'}</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-slate-100 text-xs flex items-center gap-1 hover:bg-gray-50 dark:hover:bg-slate-800"
+          >
+            <Download className="w-3 h-3" /> 导出 CSV
+          </button>
+          <button
+            type="button"
+            onClick={handleImportCsvClick}
+            className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-slate-100 text-xs flex items-center gap-1 hover:bg-gray-50 dark:hover:bg-slate-800"
+          >
+            <Upload className="w-3 h-3" /> 导入 CSV
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={handleImportCsv}
+          />
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* 左侧：添加/编辑表单 */}

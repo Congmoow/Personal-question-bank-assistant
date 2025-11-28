@@ -4,11 +4,15 @@ const path = require('path');
 const isDev = !app.isPackaged;
 
 function createWindow() {
+  const encodedUserDataPath = encodeURIComponent(app.getPath('userData'));
+
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
     webPreferences: {
       contextIsolation: true,
+      preload: path.join(__dirname, 'preload.cjs'),
+      additionalArguments: [`--userDataPath=${encodedUserDataPath}`],
     },
   });
 
