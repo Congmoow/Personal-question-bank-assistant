@@ -59,6 +59,14 @@ function QuestionManager({ bank, onBack, onUpdateBank, theme, onToggleTheme }) {
   const [isTesting, setIsTesting] = useState(false);
   const [testQuestion, setTestQuestion] = useState(null);
   const [showTestAnswer, setShowTestAnswer] = useState(false);
+  const [testSelectedKeys, setTestSelectedKeys] = useState([]);
+
+  // 随机练习模式状态：一次性打乱题库顺序，按顺序练习
+  const [isPracticeMode, setIsPracticeMode] = useState(false);
+  const [practiceQuestions, setPracticeQuestions] = useState([]);
+  const [practiceIndex, setPracticeIndex] = useState(0);
+  const [showPracticeAnswer, setShowPracticeAnswer] = useState(false);
+  const [practiceSelectedKeys, setPracticeSelectedKeys] = useState([]);
 
   // 当内部 questions 改变时，通知父组件更新整个 bank
   useEffect(() => {
@@ -373,9 +381,12 @@ function QuestionManager({ bank, onBack, onUpdateBank, theme, onToggleTheme }) {
       alert('题库为空，无法抽题！');
       return;
     }
+    // 开始单题抽题时，退出随机练习模式
+    setIsPracticeMode(false);
     const randomQ = questions[Math.floor(Math.random() * questions.length)];
     setTestQuestion(randomQ);
     setShowTestAnswer(false);
+    setTestSelectedKeys([]);
     setIsTesting(true);
   };
 
@@ -390,6 +401,88 @@ function QuestionManager({ bank, onBack, onUpdateBank, theme, onToggleTheme }) {
     }
     setTestQuestion(nextQ);
     setShowTestAnswer(false);
+    setTestSelectedKeys([]);
+  };
+
+  const handleTestOptionClick = (key) => {
+    if (!testQuestion || !Array.isArray(testQuestion.options)) return;
+    const isMulti = testQuestion.category === '多选题';
+    setTestSelectedKeys((prev) => {
+      if (isMulti) {
+        return prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
+      }
+      return prev.includes(key) ? [] : [key];
+    });
+  };
+
+  const shuffleQuestionsOnce = () => {
+    const arr = [...questions];
+    for (let i = arr.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  };
+
+  const startPractice = () => {
+    if (questions.length === 0) {
+      alert('题库为空，无法开始随机练习！');
+      return;
+    }
+    const shuffled = shuffleQuestionsOnce();
+    setPracticeQuestions(shuffled);
+    setPracticeIndex(0);
+    setShowPracticeAnswer(false);
+    setPracticeSelectedKeys([]);
+    setIsPracticeMode(true);
+    // 进入随机练习时，关闭抽题模式
+    setIsTesting(false);
+  };
+
+  const closePractice = () => {
+    setIsPracticeMode(false);
+    setPracticeQuestions([]);
+    setPracticeIndex(0);
+    setShowPracticeAnswer(false);
+    setPracticeSelectedKeys([]);
+  };
+
+  const togglePracticeAnswer = () => {
+    setShowPracticeAnswer(prev => !prev);
+  };
+
+  const prevPracticeQuestion = () => {
+    if (!practiceQuestions.length) return;
+    if (practiceIndex === 0) {
+      alert('已经是第一题了');
+      return;
+    }
+    setPracticeIndex(practiceIndex - 1);
+    setShowPracticeAnswer(false);
+    setPracticeSelectedKeys([]);
+  };
+
+  const nextPracticeQuestion = () => {
+    if (!practiceQuestions.length) return;
+    if (practiceIndex >= practiceQuestions.length - 1) {
+      alert('已经是最后一题了');
+      return;
+    }
+    setPracticeIndex(practiceIndex + 1);
+    setShowPracticeAnswer(false);
+    setPracticeSelectedKeys([]);
+  };
+
+  const handlePracticeOptionClick = (key) => {
+    const current = currentPracticeQuestion;
+    if (!current || !Array.isArray(current.options)) return;
+    const isMulti = current.category === '多选题';
+    setPracticeSelectedKeys((prev) => {
+      if (isMulti) {
+        return prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
+      }
+      return prev.includes(key) ? [] : [key];
+    });
   };
 
   const toggleAnswer = (id) => {
@@ -404,8 +497,142 @@ function QuestionManager({ bank, onBack, onUpdateBank, theme, onToggleTheme }) {
     return matchesCategory && matchesSearch;
   });
 
+  const currentPracticeQuestion = isPracticeMode && practiceQuestions.length > 0
+    ? practiceQuestions[practiceIndex]
+    : null;
+
   return (
     <div className="min-h-screen p-4 md:p-8 max-w-6xl mx-auto relative bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+      {/* 随机练习模态框 */}
+      {isPracticeMode && currentPracticeQuestion && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 dark:text-slate-100 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-6 bg-purple-600 text-white flex justify-between items-center">
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                <Shuffle className="w-6 h-6" /> 随机练习
+              </h3>
+              <button onClick={closePractice} className="hover:bg-purple-700 p-2 rounded-full transition-colors">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-8 overflow-y-auto flex-1">
+              <div className="mb-4 text-xs text-gray-500 dark:text-slate-400">
+                当前进度：第 {practiceIndex + 1} / {practiceQuestions.length} 题
+              </div>
+              <div className="mb-6">
+                <span className="inline-block px-3 py-1 bg-purple-100/90 text-purple-900 dark:bg-purple-900/60 dark:text-purple-100 rounded-full text-sm font-medium mb-3">
+                  {currentPracticeQuestion.category}
+                </span>
+                <h2 className="text-2xl font-medium text-gray-800 dark:text-slate-50 leading-relaxed mb-4">
+                  {currentPracticeQuestion.question}
+                </h2>
+
+                {currentPracticeQuestion.options && currentPracticeQuestion.options.length > 0 && (
+                  <div className="space-y-2">
+                    {currentPracticeQuestion.options.map(opt => {
+                      const isSelected = practiceSelectedKeys.includes(opt.key);
+                      const isCorrect = !!opt.isCorrect;
+                      const show = showPracticeAnswer;
+
+                      let containerClass = 'bg-gray-50 border-gray-100 dark:bg-slate-800 dark:border-slate-700';
+                      let badgeClass = 'bg-white text-gray-500 border dark:bg-slate-900 dark:text-slate-200 dark:border-slate-600';
+                      let textClass = 'text-gray-700 dark:text-slate-100';
+
+                      if (!show && isSelected) {
+                        containerClass = 'bg-blue-50 border-blue-200 dark:bg-blue-900/40 dark:border-blue-500/60';
+                        badgeClass = 'bg-blue-600 text-white border-blue-700';
+                        textClass = 'text-blue-900 dark:text-blue-100';
+                      }
+
+                      if (show) {
+                        if (isSelected && isCorrect) {
+                          containerClass = 'bg-green-50 border-green-200 dark:bg-emerald-900/40 dark:border-emerald-500/60';
+                          badgeClass = 'bg-green-600 text-white border-green-700';
+                          textClass = 'text-green-800 dark:text-emerald-300 font-medium';
+                        } else if (isSelected && !isCorrect) {
+                          containerClass = 'bg-red-50 border-red-200 dark:bg-red-900/40 dark:border-red-500/60';
+                          badgeClass = 'bg-red-600 text-white border-red-700';
+                          textClass = 'text-red-800 dark:text-red-200 font-medium';
+                        } else if (!isSelected && isCorrect) {
+                          containerClass = 'bg-green-50/60 border-green-200 dark:bg-emerald-900/20 dark:border-emerald-500/40';
+                          badgeClass = 'bg-green-100 text-green-700 border-green-300 dark:bg-emerald-800 dark:text-emerald-200 dark:border-emerald-500/60';
+                          textClass = 'text-green-800 dark:text-emerald-300';
+                        }
+                      }
+
+                      return (
+                        <button
+                          type="button"
+                          key={opt.key}
+                          onClick={() => {!showPracticeAnswer && handlePracticeOptionClick(opt.key);}}
+                          className={`w-full text-left p-3 border rounded-lg flex items-start gap-3 transition-colors ${containerClass}`}
+                        >
+                          <span
+                            className={`font-bold w-6 h-6 flex items-center justify-center rounded-full text-sm shrink-0 ${badgeClass}`}
+                          >
+                            {opt.key}
+                          </span>
+                          <span className={textClass}>
+                            {opt.text}
+                          </span>
+                          {show && isCorrect && <Check className="w-5 h-5 text-green-600 ml-auto" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {showPracticeAnswer ? (
+                <div className="bg-green-50 dark:bg-emerald-900/30 border border-green-100 dark:border-emerald-500/50 p-6 rounded-xl animate-fadeIn">
+                  <h4 className="text-green-800 dark:text-emerald-300 font-bold mb-2 flex items-center gap-2">
+                    <Check className="w-5 h-5" /> 正确答案
+                  </h4>
+                  <p className="text-gray-700 dark:text-slate-100 whitespace-pre-wrap leading-relaxed">
+                    {currentPracticeQuestion.answer}
+                  </p>
+                </div>
+              ) : (
+                <div className="h-32 flex items-center justify-center bg-gray-50 dark:bg-slate-800 rounded-xl border-2 border-dashed border-gray-200 dark:border-slate-600 text-gray-400 dark:text-slate-400">
+                  ??? 思考一下，点击下方“查看答案” ???
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-gray-100 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div className="text-xs text-gray-500 dark:text-slate-400">
+                提示：随机练习会按照打乱后的顺序依次展示所有题目
+              </div>
+              <div className="flex gap-2 w-full md:w-auto justify-end">
+                <button
+                  onClick={prevPracticeQuestion}
+                  className="px-3 py-2 rounded-xl text-xs font-medium border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-700"
+                >
+                  上一题
+                </button>
+                <button
+                  onClick={togglePracticeAnswer}
+                  className={`px-3 py-2 rounded-xl text-xs font-medium flex-1 md:flex-none flex items-center justify-center gap-2 ${
+                    showPracticeAnswer
+                      ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-200'
+                  }`}
+                >
+                  {showPracticeAnswer ? <><EyeOff className="w-4 h-4" /> 隐藏答案</> : <><Eye className="w-4 h-4" /> 查看答案</>}
+                </button>
+                <button
+                  onClick={nextPracticeQuestion}
+                  className="px-3 py-2 rounded-xl text-xs font-medium border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-100 hover:bg-gray-50 dark:hover:bg-slate-700"
+                >
+                  下一题
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 抽题模式模态框 */}
       {isTesting && testQuestion && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -428,19 +655,60 @@ function QuestionManager({ bank, onBack, onUpdateBank, theme, onToggleTheme }) {
                   {testQuestion.question}
                 </h2>
                 
-                {/* 如果是选择题，显示选项 */}
+                {/* 如果是选择题，显示选项，可点击作答 */}
                 {testQuestion.options && testQuestion.options.length > 0 && (
-                   <div className="space-y-2">
-                     {testQuestion.options.map(opt => (
-                       <div key={opt.key} className={`p-3 border rounded-lg flex items-start gap-3 ${showTestAnswer && opt.isCorrect ? 'bg-green-50 border-green-200 dark:bg-emerald-900/40 dark:border-emerald-500/60' : 'bg-gray-50 border-gray-100 dark:bg-slate-800 dark:border-slate-700'}`}>
-                         <span className={`font-bold w-6 h-6 flex items-center justify-center rounded-full text-sm shrink-0 ${showTestAnswer && opt.isCorrect ? 'bg-green-600 text-white' : 'bg-white text-gray-500 border dark:bg-slate-900 dark:text-slate-200 dark:border-slate-600'}`}>
-                           {opt.key}
-                         </span>
-                         <span className={showTestAnswer && opt.isCorrect ? 'text-green-800 dark:text-emerald-300 font-medium' : 'text-gray-700 dark:text-slate-100'}>{opt.text}</span>
-                         {showTestAnswer && opt.isCorrect && <Check className="w-5 h-5 text-green-600 ml-auto" />}
-                       </div>
-                     ))}
-                   </div>
+                  <div className="space-y-2">
+                    {testQuestion.options.map(opt => {
+                      const isSelected = testSelectedKeys.includes(opt.key);
+                      const isCorrect = !!opt.isCorrect;
+                      const show = showTestAnswer;
+
+                      let containerClass = 'bg-gray-50 border-gray-100 dark:bg-slate-800 dark:border-slate-700';
+                      let badgeClass = 'bg-white text-gray-500 border dark:bg-slate-900 dark:text-slate-200 dark:border-slate-600';
+                      let textClass = 'text-gray-700 dark:text-slate-100';
+
+                      if (!show && isSelected) {
+                        containerClass = 'bg-blue-50 border-blue-200 dark:bg-blue-900/40 dark:border-blue-500/60';
+                        badgeClass = 'bg-blue-600 text-white border-blue-700';
+                        textClass = 'text-blue-900 dark:text-blue-100';
+                      }
+
+                      if (show) {
+                        if (isSelected && isCorrect) {
+                          containerClass = 'bg-green-50 border-green-200 dark:bg-emerald-900/40 dark:border-emerald-500/60';
+                          badgeClass = 'bg-green-600 text-white border-green-700';
+                          textClass = 'text-green-800 dark:text-emerald-300 font-medium';
+                        } else if (isSelected && !isCorrect) {
+                          containerClass = 'bg-red-50 border-red-200 dark:bg-red-900/40 dark:border-red-500/60';
+                          badgeClass = 'bg-red-600 text-white border-red-700';
+                          textClass = 'text-red-800 dark:text-red-200 font-medium';
+                        } else if (!isSelected && isCorrect) {
+                          containerClass = 'bg-green-50/60 border-green-200 dark:bg-emerald-900/20 dark:border-emerald-500/40';
+                          badgeClass = 'bg-green-100 text-green-700 border-green-300 dark:bg-emerald-800 dark:text-emerald-200 dark:border-emerald-500/60';
+                          textClass = 'text-green-800 dark:text-emerald-300';
+                        }
+                      }
+
+                      return (
+                        <button
+                          type="button"
+                          key={opt.key}
+                          onClick={() => {!showTestAnswer && handleTestOptionClick(opt.key);}}
+                          className={`w-full text-left p-3 border rounded-lg flex items-start gap-3 transition-colors ${containerClass}`}
+                        >
+                          <span
+                            className={`font-bold w-6 h-6 flex items-center justify-center rounded-full text-sm shrink-0 ${badgeClass}`}
+                          >
+                            {opt.key}
+                          </span>
+                          <span className={textClass}>
+                            {opt.text}
+                          </span>
+                          {show && isCorrect && <Check className="w-5 h-5 text-green-600 ml-auto" />}
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
 
@@ -501,6 +769,12 @@ function QuestionManager({ bank, onBack, onUpdateBank, theme, onToggleTheme }) {
             className="flex-1 md:flex-none bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-2 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 font-medium"
           >
             <Shuffle className="w-5 h-5" /> 随机抽题
+          </button>
+          <button
+            onClick={startPractice}
+            className="hidden sm:inline-flex bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-slate-100 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-slate-700 transition-all items-center gap-2"
+          >
+            <BookOpen className="w-4 h-4" /> 随机练习
           </button>
           <div className="hidden md:block text-sm text-gray-500 bg-white dark:bg-slate-800 px-4 py-2 rounded-lg shadow-sm border border-gray-100 dark:border-slate-700">
             共 <span className="font-bold text-blue-600 text-lg">{questions.length}</span> 题
