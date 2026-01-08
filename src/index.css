@@ -1,0 +1,122 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-800 antialiased;
+  }
+
+  .dark body {
+    @apply bg-gray-900 text-gray-100;
+  }
+
+  /* 移除所有输入框默认选中效果 */
+  input, textarea, select, button {
+    @apply outline-none;
+  }
+
+  /* 自定义输入框选中效果 */
+  input:focus, textarea:focus, select:focus {
+    @apply border-primary bg-white shadow-[0_0_0_3px_rgba(22,93,255,0.1)];
+  }
+
+  .dark input:focus, .dark textarea:focus, .dark select:focus {
+    @apply border-primary bg-gray-700 shadow-[0_0_0_3px_rgba(22,93,255,0.2)];
+  }
+}
+
+/* 手动 Dark Mode 规则 - Kiro 风格暗色主题 */
+.dark .bg-white {
+  background-color: #2D2D2D !important; /* gray-800 Kiro 面板色 */
+}
+
+.dark .bg-gray-50,
+.dark .bg-gray-50\/50 {
+  background-color: #1F1F1F !important; /* gray-900 Kiro 主背景 */
+}
+
+.dark .bg-gray-100 {
+  background-color: #3C3C3C !important; /* Kiro 输入框/卡片背景 */
+}
+
+.dark .border-gray-200,
+.dark .border-gray-100 {
+  border-color: #3C3C3C !important; /* gray-700 Kiro 边框色 */
+}
+
+.dark .text-gray-900 {
+  color: #F7F8FA !important; /* gray-50 */
+}
+
+.dark .text-gray-800 {
+  color: #F2F3F5 !important; /* gray-100 */
+}
+
+.dark .text-gray-700 {
+  color: #C9CDD4 !important; /* gray-300 */
+}
+
+.dark .text-gray-500 {
+  color: #86909C !important; /* gray-400 */
+}
+
+/* 自定义滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #C9CDD4;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #86909C;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #4E5969;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #6B7785;
+}
+
+/* 隐藏滚动条但保持滚动功能（可选） */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+ .scrollbar-hidden {
+   -ms-overflow-style: none;
+   scrollbar-width: none;
+ }
+
+/* Custom Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+/* 自定义标题栏拖动区域 */
+.app-drag {
+  -webkit-app-region: drag;
+}
+
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}

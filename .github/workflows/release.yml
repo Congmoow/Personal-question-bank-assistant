@@ -1,0 +1,61 @@
+name: Build and Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        os: [windows-latest]
+        # 如需支持多平台，取消下面的注释
+        # os: [windows-latest, macos-latest, ubuntu-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set Tag Name
+        run: |
+          if ("${{ github.event_name }}" -eq "release") {
+            Add-Content -Path $env:GITHUB_ENV -Value "TAG_NAME=${{ github.event.release.tag_name }}"
+          } else {
+            Add-Content -Path $env:GITHUB_ENV -Value "TAG_NAME=${{ github.ref_name }}"
+          }
+
+      - name: Build and Package
+        run: npm run electron:build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          fail_on_unmatched_files: false
+          tag_name: ${{ env.TAG_NAME }}
+          files: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
